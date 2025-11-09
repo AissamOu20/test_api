@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pixeldrain Dashboard (Direct Test)</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" 
+          rel="stylesheet">
+</head>
+<body>
+
+    <div class="container my-4">
+        
+        <div class="alert alert-danger">
+            <strong>Test Page:</strong> This page calls the Pixeldrain API directly from the browser.
+            <br>
+            <strong>It will not work</strong> due to CORS errors and API key exposure.
+        </div>
+
+        <div class="card mb-4">
+            <div class="card-body">
+                <h2 class="card-title">Upload a File</h2>
+                <div class="mb-3">
+                    <input class="form-control" type="file" id="file-input">
+                </div>
+                <button class="btn btn-success" id="upload-button">Upload</button>
+                <div id="upload-status" class="mt-2 text-muted"></div>
+            </div>
+        </div>
+
+        <h2>My Pixeldrain Files</h2>
+        <button id="fetch-button" class="btn btn-primary mb-3">Fetch Files</button>
+        <div id="status" class="text-muted"></div>
+
+        <div class="table-responsive">
+            <table class="table table-striped table-hover table-bordered">
+                <thead class="table-dark">
+                    <tr>
+                        <th>Name</th>
+                        <th>Size</th>
+                        <th>Views</th>
+                        <th>Date Uploaded</th>
+                        <th>Expires In</th> <th>Link</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="file-list-body">
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+<script>
+    // --- Get all elements ---
+const fetchButton = document.getElementById('fetch-button');
+const tableBody = document.getElementById('file-list-body');
+const statusEl = document.getElementById('status');
+
+const fileInput = document.getElementById('file-input');
+const uploadButton = document.getElementById('upload-button');
+const uploadStatus = document.getElementById('upload-status');
+
+// ------------------------------------------------------------------
+// --- ⚠️ DANGER ⚠️ ---
+// This is the INSECURE part. Your API key is visible to everyone.
+const PIXELDRAIN_API_KEY = "da729f4b-b715-426d-8c09-15de5dc881a0";
+// ------------------------------------------------------------------
+
+// Create the authentication header
+const AUTH_HEADER = "Basic " + btoa(":" + PIXELDRAIN_API_KEY);
+
+
+// --- UPLOAD Functionality (This will be blocked by CORS) ---
+uploadButton.addEventListener('click', async () => {
+    const file = fileInput.files[0];
+    if (!file) {
+        uploadStatus.textContent = '❌ Error: Please select a file first.';
+        return;
+    }
+    uploadStatus.textContent = `Uploading "${file.name}"...`;
+    
+    // This is the direct API call that will be blocked
+    const url = `https://pixeldrain.com/api/file/${encodeURIComponent(file.name)}`;
+
+    try {
+        const response = await fetch(url, { 
+            method: 'PUT', 
+            body: file,
+            headers: { 'Authorization': AUTH_HEADER } // Add auth header
+        });
+        const result = await response.json();
+
+        if (response.status === 201) {
+            uploadStatus.textContent = `✅ Success! File ID: ${result.id}`;
+            fileInput.value = null;
+            fetchFiles(); 
+        } else {
+            uploadStatus.textContent = `❌ Error: ${result.message}`;
+        }
+    } catch (error) {
+        uploadStatus.textContent = `A script error occurred: ${error.message}`;
+    }
+});
+
+// --- FETCH LIST Functionality (This will be blocked by CORS) ---
+async function fetchFiles() {
+    statusEl.textContent = 'Fetching files...';
+    tableBody.innerHTML = ''; 
+    
+    // This is the direct API call that will be blocked
+    const url = 'https://pixeldrain.com/api/user/files';
+
+    try {
+        const response = await fetch(url, {
+            headers: { 'Authorization': AUTH_HEADER } // Add auth header
+        });
+        
+        if (!response.ok) {
+            statusEl.textContent = `Error: API request failed.`;
+            return;
+        }
+        const result = await response.json();
+        const filesArray = result.files;
+
+        if (!Array.isArray(filesArray)) {
+            console.error("Response 'files' property is not an array:", result);
+            statusEl.textContent = 'Error: Received an invalid response from the server.';
+            return;
+        }
+        if (filesArray.length === 0) {
+            statusEl.textContent = 'You have no files.';
+            return;
+        }
+
+        filesArray.forEach(file => {
+            const row = tableBody.insertRow();
+            row.insertCell().textContent = file.name;
+            row.insertCell().textContent = formatBytes(file.size);
+            row.insertCell().textContent = file.views;
+            row.insertCell().textContent = new Date(file.date_upload).toLocaleString();
+            const daysLeft = calculateDaysLeft(file.date_upload);
+            const expiresCell = row.insertCell();
+            expiresCell.textContent = daysLeft;
+            if (daysLeft === "Expired") {
+                expiresCell.style.color = "red";
+                expiresCell.style.fontWeight = "bold";
+            }
+            const linkCell = row.insertCell();
+            linkCell.innerHTML = `<a href="https://pixeldrain.com/u/${file.id}" target="_blank">View File</a>`;
+            const actionCell = row.insertCell();
+            actionCell.innerHTML = `<button class="btn btn-danger btn-sm" onclick="deleteFile('${file.id}', '${file.name}')">Delete</button>`;
+        });
+
+        statusEl.textContent = `Successfully fetched ${filesArray.length} files.`;
+
+    } catch (error) {
+        statusEl.textContent = `A script error occurred: ${error.message}`;
+        console.error(error);
+    }
+}
+
+fetchButton.addEventListener('click', fetchFiles);
+
+// --- DELETE Functionality (This will be blocked by CORS) ---
+async function deleteFile(id, name) {
+    if (!confirm(`Are you sure you want to delete "${name}"?`)) {
+        return;
+    }
+    statusEl.textContent = `Deleting ${name}...`;
+    
+    // This is the direct API call that will be blocked
+    const url = `https://pixeldrain.com/api/file/${id}`;
+    
+    try {
+        const response = await fetch(url, { 
+            method: 'DELETE',
+            headers: { 'Authorization': AUTH_HEADER } // Add auth header
+        });
+        const result = await response.json();
+
+        if (response.ok) {
+            statusEl.textContent = `✅ Successfully deleted "${name}".`;
+            fetchFiles(); 
+        } else {
+            statusEl.textContent = `❌ Error: ${result.message}`;
+        }
+    } catch (error) {
+        statusEl.textContent = `A script error occurred: ${error.message}`;
+    }
+}
+
+// --- Helper functions (no changes) ---
+function calculateDaysLeft(dateString) {
+    const uploadDate = new Date(dateString);
+    const expiryDate = new Date(uploadDate);
+    expiryDate.setDate(expiryDate.getDate() + 120);
+    const today = new Date();
+    const msPerDay = 1000 * 60 * 60 * 24;
+    const msDiff = expiryDate.getTime() - today.getTime();
+    const daysLeft = Math.ceil(msDiff / msPerDay);
+    if (daysLeft <= 0) return "Expired";
+    return `${daysLeft} days`;
+}
+function formatBytes(bytes, decimals = 2) {
+    if (!bytes || bytes === 0) return '0 Bytes';
+    const k = 1024;
+    const dm = decimals < 0 ? 0 : decimals;
+    const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
+}
+
+// Automatically fetch files on page load
+fetchFiles();
+</script>
+
+</body>
+</html>
